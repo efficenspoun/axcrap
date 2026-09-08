@@ -1,11 +1,9 @@
 /**
  * Shared JSON fetch with CORS fallback.
  *
- * Game sources behind strict origins (e.g. velara.cc, truffled.lol) do not send
- * `Access-Control-Allow-Origin`, so a direct browser fetch is blocked. This
- * tries the direct request first, then falls back to public CORS proxies, and
- * finally to a bundled same-origin snapshot when every network path fails so
- * the source can never be lost to a proxy outage.
+ * In a normal web deployment, try the source directly and then public CORS
+ * proxies.  In a `file://` build, remote JSON fetches may be blocked by the
+ * browser's opaque/null origin, so callers can provide a bundled snapshot.
  */
 
 const CORS_PROXIES = [
@@ -17,7 +15,39 @@ const CORS_PROXIES = [
 const DIRECT_TIMEOUT_MS = 12000;
 const REQUEST_TIMEOUT_MS = 20000;
 
+function isFileProtocol() {
+  return typeof location !== 'undefined' && location.protocol === 'file:';
+}
+
+async function readBundledSnapshot(snapshot) {
+  if (!snapshot) return null;
+  try {
+    // fetch(file://...) is browser-dependent.  The single-file builder replaces
+    // the marker below with an inline JSON object, avoiding a local fetch.
+    if (typeof window !== 'undefined' && window.__AXCRAP_SNAPSHOTS__?.[snapshot]) {
+      return window.__AXCRAP_SNAPSHOTS__[snapshot];
+    }
+
+    const res = await fetch(snapshot);
+    if (res.ok) return await res.json();
+  } catch (err) {
+    console.warn(`Snapshot fetch failed for ${snapshot}:`, err);
+  }
+  return null;
+}
+
 export async function fetchJsonWithCorsFallback(target, options = {}) {
+  // For local single-file builds, use the bundled snapshot first.  This makes
+  // the catalog independent of CORS/proxy availability while preserving live
+  // network refreshes for normal http(s) deployments.
+  if (isFileProtocol() && options.snapshot) {
+    const snapshot = await readBundledSnapshot(options.snapshot);
+    if (snapshot != null) {
+      console.info(`Using bundled snapshot for ${target} (file:// mode)`);
+      return snapshot;
+    }
+  }
+
   const directController = new AbortController();
   const directTimer = setTimeout(() => directController.abort(), DIRECT_TIMEOUT_MS);
   try {
@@ -44,17 +74,11 @@ export async function fetchJsonWithCorsFallback(target, options = {}) {
     }
   }
 
-  // Last resort: a bundled snapshot of the source's catalog so the game list
-  // is never unavailable when every remote path is blocked or down.
   if (options.snapshot) {
-    try {
-      const res = await fetch(options.snapshot);
-      if (res.ok) {
-        console.warn(`Falling back to bundled snapshot for ${target}`);
-        return await res.json();
-      }
-    } catch (err) {
-      console.warn(`Snapshot fetch failed for ${target}:`, err);
+    const snapshot = await readBundledSnapshot(options.snapshot);
+    if (snapshot != null) {
+      console.warn(`Falling back to bundled snapshot for ${target}`);
+      return snapshot;
     }
   }
 

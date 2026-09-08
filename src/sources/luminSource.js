@@ -3,6 +3,10 @@ import { normalizeGame } from './schema.js';
 let luminInitialized = false;
 let luminInitPromise = null;
 
+function isFileProtocol() {
+  return typeof location !== 'undefined' && location.protocol === 'file:';
+}
+
 async function ensureLuminInitialized() {
   if (luminInitialized) return;
   if (luminInitPromise) return luminInitPromise;
@@ -10,6 +14,13 @@ async function ensureLuminInitialized() {
   luminInitPromise = (async () => {
     if (typeof Lumin === 'undefined') {
       throw new Error('LuminSDK not loaded. Ensure the script tag is present in index.html');
+    }
+
+    // Lumin is a live SDK, not a static catalog.  Keep it enabled on normal
+    // http(s) deployments, but don't let a local single-file page hang or
+    // fail its entire catalog because the SDK cannot initialize under file://.
+    if (isFileProtocol()) {
+      throw new Error('LuminSDK live catalog is unavailable in file:// mode');
     }
 
     await Lumin.init({ headless: true });
@@ -65,7 +76,6 @@ export const luminSource = {
   async scrape() {
     await ensureLuminInitialized();
 
-    // Fetch the entire catalog via pagination, like other sources return all games.
     const allRaw = [];
     let page = 1;
 
@@ -80,16 +90,7 @@ export const luminSource = {
       page += 1;
     }
 
-    const normalizedGames = [];
-
-    for (const game of allRaw) {
-      const normalized = convertLuminGame(game);
-      if (normalized) {
-        normalizedGames.push(normalized);
-      }
-    }
-
-    return normalizedGames;
+    return allRaw.map(convertLuminGame).filter(Boolean);
   },
 
   getImageUrl(imageToken) {
