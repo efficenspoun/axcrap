@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="100%" height="100%">
+  <rect width="600" height="400" fill="#121215"/>
+  <rect x="1" y="1" width="598" height="398" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="2"/>
+  <circle cx="300" cy="175" r="54" fill="#18181c" stroke="rgba(255,255,255,0.08)" stroke-width="1.5"/>
+  <text x="300" y="187" text-anchor="middle" font-family="'Inter', -apple-system, BlinkMacSystemFont, sans-serif" font-size="36" font-weight="600" fill="#e4e4e7">🧱</text>
+  <text x="300" y="270" text-anchor="middle" font-family="'Inter', -apple-system, BlinkMacSystemFont, sans-serif" font-weight="600" font-size="16" letter-spacing="3" fill="#71717a">TETRIS</text>
+</svg>

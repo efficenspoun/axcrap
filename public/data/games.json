@@ -1,0 +1,134 @@
+[
+  {
+    "id": "2048",
+    "title": "2048",
+    "creator": "Gabriele Cirulli",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/gabrielecirulli/2048",
+    "embedUrl": "https://gabrielecirulli.github.io/2048/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/2048_logo.svg/512px-2048_logo.svg.png",
+    "fallbackThumbnail": "assets/placeholders/2048.svg",
+    "aspectRatio": "1:1"
+  },
+  {
+    "id": "hextris",
+    "title": "Hextris",
+    "creator": "Logan Engstrom & Garrett Finucane",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/hextris/hextris",
+    "embedUrl": "https://hextris.github.io/hextris/",
+    "thumbnailUrl": "https://raw.githubusercontent.com/hextris/hextris/gh-pages/images/icons/apple-touch-icon-120x120.png",
+    "fallbackThumbnail": "assets/placeholders/hextris.svg",
+    "aspectRatio": "16:9"
+  },
+  {
+    "id": "clumsy-bird",
+    "title": "Clumsy Bird",
+    "creator": "Ellison Leão",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/ellisonleao/clumsy-bird",
+    "embedUrl": "https://ellisonleao.github.io/clumsy-bird/",
+    "thumbnailUrl": "https://raw.githubusercontent.com/ellisonleao/clumsy-bird/master/data/img/bg.png",
+    "fallbackThumbnail": "assets/placeholders/clumsy-bird.svg",
+    "aspectRatio": "4:3"
+  },
+  {
+    "id": "pacman-canvas",
+    "title": "Pacman Canvas",
+    "creator": "Dale Harvey",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/daleharvey/pacman",
+    "embedUrl": "https://daleharvey.github.io/pacman/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/Pacman.svg/480px-Pacman.svg.png",
+    "fallbackThumbnail": "assets/placeholders/pacman.svg",
+    "aspectRatio": "4:3"
+  },
+  {
+    "id": "tower-building",
+    "title": "Tower Building",
+    "creator": "Kun (iamkun)",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/iamkun/tower_game",
+    "embedUrl": "https://iamkun.github.io/tower_game/",
+    "thumbnailUrl": "https://raw.githubusercontent.com/iamkun/tower_game/master/assets/icon.png",
+    "fallbackThumbnail": "assets/placeholders/tower.svg",
+    "aspectRatio": "1:1"
+  },
+  {
+    "id": "duck-hunt",
+    "title": "Duck Hunt JS",
+    "creator": "Matt Surabian",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/subpopular/duckhuntjs",
+    "embedUrl": "https://subpopular.github.io/duckhuntjs/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/en/2/20/DuckHuntNESCoverArtUS.jpg",
+    "fallbackThumbnail": "assets/placeholders/duckhunt.svg",
+    "aspectRatio": "16:9"
+  },
+  {
+    "id": "c4",
+    "title": "Connect 4 Web",
+    "creator": "Kenrick95",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/kenrick95/c4",
+    "embedUrl": "https://kenrick95.github.io/c4/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Connect_Four.svg/512px-Connect_Four.svg.png",
+    "fallbackThumbnail": "assets/placeholders/connect4.svg",
+    "aspectRatio": "16:9"
+  },
+  {
+    "id": "minesweeper",
+    "title": "Minesweeper HTML5",
+    "creator": "Muhammed Ziad",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/muhammedziad/Minesweeper",
+    "embedUrl": "https://muhammedziad.github.io/Minesweeper/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/Minesweeper_flag.svg/480px-Minesweeper_flag.svg.png",
+    "fallbackThumbnail": "assets/placeholders/minesweeper.svg",
+    "aspectRatio": "1:1"
+  },
+  {
+    "id": "canvas-tetris",
+    "title": "Canvas Tetris",
+    "creator": "Dionysis Zindros",
+    "source": "GitHub Open Source",
+    "sourceUrl": "https://github.com/dionyz/canvas-tetris",
+    "embedUrl": "https://dionyz.github.io/canvas-tetris/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7c/Tetris_template.svg/512px-Tetris_template.svg.png",
+    "fallbackThumbnail": "assets/placeholders/tetris.svg",
+    "aspectRatio": "4:3"
+  },
+  {
+    "id": "a-dark-room",
+    "title": "A Dark Room",
+    "creator": "Michael Townsend (Doublespeak Games)",
+    "source": "Itch.io",
+    "sourceUrl": "https://adarkroom.doublespeakgames.com/",
+    "embedUrl": "https://adarkroom.doublespeakgames.com/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/en/thumb/e/e5/A_Dark_Room_iOS_App_Icon.png/220px-A_Dark_Room_iOS_App_Icon.png",
+    "fallbackThumbnail": "assets/placeholders/darkroom.svg",
+    "aspectRatio": "16:9"
+  },
+  {
+    "id": "asteroids-canvas",
+    "title": "Asteroids 3D / 2D",
+    "creator": "Kevin Roast",
+    "source": "Independent Web",
+    "sourceUrl": "https://www.kevs3d.co.uk/dev/asteroids/",
+    "embedUrl": "https://www.kevs3d.co.uk/dev/asteroids/",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/07/Asteroids_arcade_flyer.jpg/440px-Asteroids_arcade_flyer.jpg",
+    "fallbackThumbnail": "assets/placeholders/asteroids.svg",
+    "aspectRatio": "16:9"
+  },
+  {
+    "id": "breakout-mdn",
+    "title": "Breakout Canvas",
+    "creator": "Andrzej Mazur (MDN)",
+    "source": "MDN Open Web",
+    "sourceUrl": "https://github.com/end3r/Gamedev-Canvas-tutorial",
+    "embedUrl": "https://end3r.github.io/Gamedev-Canvas-tutorial/lesson10.html",
+    "thumbnailUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Breakout_arcadeflyer.png/440px-Breakout_arcadeflyer.png",
+    "fallbackThumbnail": "assets/placeholders/breakout.svg",
+    "aspectRatio": "16:9"
+  }
+]
