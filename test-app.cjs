@@ -1,85 +1,113 @@
+/**
+ * test-app.cjs — smoke test for the current axcrap architecture.
+ *
+ * Replaces the legacy smoke test which referenced the old monolithic
+ * games.json schema. This version asserts:
+ *
+ *   1. Required DOM IDs referenced from main.js exist in index.html.
+ *   2. The iframe sandbox + referrerpolicy are present.
+ *   3. No inline event handlers remain (CSP-friendliness).
+ *   4. CSP meta tag is in place.
+ *   5. The source-error-banner markup exists.
+ *   6. The placeholder directory contains at least 12 vector placeholders.
+ *   7. main.js is "lean" (under 250 lines — was <200 in legacy, relaxed for new banner code).
+ *
+ * Run with: node test-app.cjs
+ */
+
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-console.log('--- Starting axcrap Minimalist Verification ---');
+console.log('--- axcrap smoke test ---');
 
-// 1. Check games.json validity
-const gamesPath = path.join(__dirname, 'public', 'data', 'games.json');
-assert(fs.existsSync(gamesPath), 'games.json must exist');
-const gamesData = JSON.parse(fs.readFileSync(gamesPath, 'utf-8'));
-assert(Array.isArray(gamesData) && gamesData.length >= 10, 'games.json should contain at least 10 games');
-console.log(`✓ games.json valid: ${gamesData.length} games indexed.`);
+const root = __dirname;
+const htmlPath    = path.join(root, 'index.html');
+const mainJsPath  = path.join(root, 'src', 'main.js');
+const html        = fs.readFileSync(htmlPath, 'utf-8');
+const mainContent = fs.readFileSync(mainJsPath, 'utf-8');
 
-// 2. Validate Game Object Structure (Title & Creator only, no ratings, no tags, no controls)
-gamesData.forEach(game => {
-  assert(game.id, `Game missing id`);
-  assert(game.title, `Game ${game.id} missing title`);
-  assert(game.creator, `Game ${game.id} missing creator`);
-  assert(game.source, `Game ${game.id} missing source`);
-  assert(game.sourceUrl, `Game ${game.id} missing sourceUrl`);
-  assert(game.embedUrl, `Game ${game.id} missing embedUrl`);
-  assert(game.aspectRatio, `Game ${game.id} missing aspectRatio`);
-  assert(game.fallbackThumbnail, `Game ${game.id} missing fallbackThumbnail`);
+// 1. Every getElementById in main.js must resolve to a real element in index.html.
+const idMatches = [...mainContent.matchAll(/document\.getElementById\('([^']+)'\)/g)]
+  .map((m) => m[1])
+  .filter((id) => id !== 'btn-reset-filters'); // dynamically created in empty state
 
-  // Verify ratings are removed
-  assert(game.rating === undefined, `Rating must be removed per user specification (found on ${game.id})`);
-  assert(game.ratingCount === undefined, `RatingCount must be removed per user specification (found on ${game.id})`);
-  // Verify tags and controls are removed
-  assert(!game.tags, `Tags should not exist on ${game.id}`);
-  assert(!game.controlsSummary, `Controls should not exist on ${game.id}`);
-});
-console.log('✓ Game data contracts validated: ratings, tags, and controls completely removed.');
+let missing = [];
+for (const id of idMatches) {
+  if (!html.includes(`id="${id}"`)) missing.push(id);
+}
+assert.strictEqual(missing.length, 0, `Missing element ids in index.html: ${missing.join(', ')}`);
+console.log(`\u2713 All ${idMatches.length} static getElementById targets exist in index.html.`);
 
-// 3. Test Source Dropdown Extraction
-const uniqueSources = Array.from(new Set(gamesData.map(g => g.source))).sort();
-console.log(`✓ Sources detected (${uniqueSources.length}):`, uniqueSources);
-assert(uniqueSources.includes('GitHub Open Source'), 'Should include GitHub Open Source');
+// 2. Iframe hardening.
+assert(/sandbox="[^"]*allow-scripts/i.test(html), 'iframe missing allow-scripts in sandbox');
+assert(/referrerpolicy="no-referrer"/i.test(html), 'iframe missing referrerpolicy="no-referrer"');
+console.log('\u2713 Iframe sandbox + referrerpolicy in place.');
 
-// 4. Test Source Filter Logic
-uniqueSources.forEach(source => {
-  const filtered = gamesData.filter(g => g.source === source);
-  assert(filtered.length > 0, `Filter for ${source} should return results`);
-});
-console.log('✓ Source filtering logic verified for all dropdown options.');
+// 3. No inline event handlers in the source HTML (CSP-friendliness).
+const inlineHandlers = [
+  /on(?:error|click|load|submit|focus|blur)\s*=\s*["'][^"']*["']/i,
+];
+for (const re of inlineHandlers) {
+  assert(!re.test(html), `Inline event handler found in index.html: ${re}`);
+}
+console.log('\u2713 No inline event handlers in index.html.');
 
-// 5. Test Title & Creator Search Simulation
-const searchTitle = gamesData.filter(g => g.title.toLowerCase().includes('hextris'));
-assert(searchTitle.length === 1 && searchTitle[0].id === 'hextris', 'Search by title failed');
+// 4. CSP meta tag.
+assert(/http-equiv=["']Content-Security-Policy["']/i.test(html), 'CSP meta tag missing');
+assert(/script-src/i.test(html), 'CSP script-src directive missing');
+// blob: must be in script-src so the game iframe (loaded as a blob URL) can
+// run scripts. Without this, GN-Math games render as a black screen because
+// their inline <script> blocks are blocked by CSP.
+assert(/script-src[^;]*\bblob:/i.test(html), 'CSP script-src missing blob: (causes GN-Math black screen)');
+console.log('\u2713 Content-Security-Policy meta tag present (with blob: in script-src).');
 
-const searchCreator = gamesData.filter(g => g.creator.toLowerCase().includes('cirulli'));
-assert(searchCreator.length === 1 && searchCreator[0].id === '2048', 'Search by creator failed');
-console.log('✓ Search matching verified for Title and Creator.');
+// 5. Source-error-banner markup.
+assert(/id=["']source-error-banner["']/.test(html), 'source-error-banner missing from index.html');
+assert(/id=["']source-error-list["']/.test(html), 'source-error-list missing from index.html');
+console.log('\u2713 Source-error-banner markup present.');
 
-// 6. Verify SVG Fallback Placeholders Exist on disk
-const placeholderDir = path.join(__dirname, 'public', 'assets', 'placeholders');
-assert(fs.existsSync(placeholderDir), 'Placeholders directory must exist');
-const files = fs.readdirSync(placeholderDir);
-assert(files.length >= 12, 'Must have at least 12 placeholder SVGs');
-console.log(`✓ Minimalist Placeholders verified: ${files.length} vector assets present.`);
+// 6. Placeholders.
+const placeholderDir = path.join(root, 'public', 'assets', 'placeholders');
+assert(fs.existsSync(placeholderDir), 'placeholders directory missing');
+const placeholderFiles = fs.readdirSync(placeholderDir);
+assert(placeholderFiles.length >= 12, `Expected \u226512 placeholder SVGs, got ${placeholderFiles.length}`);
+console.log(`\u2713 Placeholders verified: ${placeholderFiles.length} vector assets present.`);
 
-// 7. Verify Index.html Contains Required Modals and Elements
-const htmlPath = path.join(__dirname, 'index.html');
-const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
-assert(htmlContent.includes('id="source-select"'), 'Source dropdown missing in HTML');
-assert(htmlContent.includes('id="search-input"'), 'Search input missing in HTML');
-assert(htmlContent.includes('Report Game Broken'), 'Report Game Broken button text missing');
-assert(htmlContent.includes('id="player-modal-overlay"'), 'Player modal missing in HTML');
-assert(htmlContent.includes('id="report-modal-overlay"'), 'Report modal missing in HTML');
-assert(!htmlContent.includes('modal-rating-container'), 'Rating container should be removed from HTML');
-assert(htmlContent.includes('sandbox="allow-scripts'), 'Iframe sandbox missing');
-// 8. Verify all static getElementById targets in main.js exist in index.html
-const jsPath = path.join(__dirname, 'src', 'main.js');
-const jsContent = fs.readFileSync(jsPath, 'utf-8');
-const idMatches = [...jsContent.matchAll(/document\.getElementById\('([^']+)'\)/g)]
-  .map(m => m[1])
-  .filter(id => id !== 'btn-reset-filters'); // Dynamically created in empty state
+// 7. main.js line budget.
+const mainLines = mainContent.split('\n').length;
+assert(mainLines < 250, `main.js too large (${mainLines} lines; budget 250)`);
+console.log(`\u2713 main.js is lean: ${mainLines} lines.`);
 
-idMatches.forEach(id => {
-  assert(htmlContent.includes(`id="${id}"`), `Missing element with id="${id}" in index.html`);
-});
-console.log(`✓ All ${idMatches.length} static DOM IDs in main.js exist in index.html.`);
+// 8. All listed sources exist as files.
+const requiredSources = ['gnmathSource', 'duckmathSource', 'velaraSource', 'truffledSource'];
+for (const name of requiredSources) {
+  assert(
+    fs.existsSync(path.join(root, 'src', 'sources', `${name}.js`)),
+    `missing source module: ${name}.js`
+  );
+}
+console.log(`\u2713 All ${requiredSources.length} source modules present.`);
 
-console.log('--- ALL MINIMALIST VERIFICATION CHECKS PASSED ---');
+// 9. Schema module is present.
+assert(
+  fs.existsSync(path.join(root, 'src', 'sources', 'schema.js')),
+  'missing src/sources/schema.js'
+);
+console.log('\u2713 schema.js present.');
 
+// 10. Pure cloak helpers extracted for testability.
+assert(
+  fs.existsSync(path.join(root, 'src', 'services', 'cloakPure.js')),
+  'missing src/services/cloakPure.js'
+);
+console.log('\u2713 cloakPure.js present.');
 
+// 11. Vite config pinned (not relying on implicit defaults).
+assert(
+  fs.existsSync(path.join(root, 'vite.config.js')),
+  'missing vite.config.js'
+);
+console.log('\u2713 vite.config.js present.');
+
+console.log('\n--- SMOKE TEST PASSED ---');

@@ -46,8 +46,21 @@ if (btnCloak) {
       showToast('Pick a cloak mode in Settings first', 'error');
       return;
     }
-    if (openCloaked(mode)) {
+    const result = openCloaked(mode);
+    if (result.ok) {
       showToast(`Opened in cloaked tab (${mode})`, 'success');
+    } else if (result.reason === 'too_large') {
+      // data: URL would exceed browser limits — silently fall back to blob.
+      const fallback = openCloaked('blob');
+      if (fallback.ok) {
+        showToast('Page too large for data: URL — opened in blob mode instead', 'success');
+      } else {
+        showToast('Popup blocked — allow popups for this site', 'error');
+      }
+    } else if (result.reason === 'write_failed') {
+      showToast('Could not write to the cloaked tab (browser denied access)', 'error');
+    } else if (result.reason === 'unknown_mode') {
+      showToast('Unknown cloak mode — check Settings', 'error');
     } else {
       showToast('Popup blocked — allow popups for this site', 'error');
     }
@@ -73,11 +86,12 @@ function applyFilters() {
  */
 async function loadGames(forceRefresh = false) {
   gamesGrid.showSkeleton(12);
+  hideSourceErrorBanner();
 
   try {
     const result = await sourceManager.loadAllGames(forceRefresh, (progress) => {
       if (progress.status === 'scraping_source') {
-        filterControls.updateCount('...', `Scraping ${progress.source}...`);
+        filterControls.updateCount('', `Scraping ${progress.source}...`);
       }
     });
 
@@ -93,6 +107,11 @@ async function loadGames(forceRefresh = false) {
 
     applyFilters();
 
+    // Surface per-source failures so silent partial outages are visible.
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+      showSourceErrorBanner(result.errors);
+    }
+
     if (forceRefresh) {
       showToast(`Scraped ${allGames.length} games from sources!`, 'success');
     } else if (result.fromCache) {
@@ -102,6 +121,44 @@ async function loadGames(forceRefresh = false) {
     console.error('Error loading game sources:', error);
     gamesGrid.showError(error.message || 'Failed to fetch games from source', () => loadGames(true));
   }
+}
+
+/**
+ * Show a dismissible banner listing sources that failed to scrape.
+ */
+function showSourceErrorBanner(errors) {
+  const banner = document.getElementById('source-error-banner');
+  const list = document.getElementById('source-error-list');
+  if (!banner || !list) return;
+
+  // Use createElement / textContent so any error messages from upstream
+  // can't inject markup into the page.
+  list.replaceChildren();
+  for (const { source, error } of errors) {
+    const li = document.createElement('li');
+    li.className = 'source-error-item';
+    const nameEl = document.createElement('strong');
+    nameEl.textContent = source;
+    const colon = document.createTextNode(': ');
+    const msgEl = document.createElement('span');
+    msgEl.className = 'source-error-message';
+    msgEl.textContent = error || 'Unknown error';
+    li.append(nameEl, colon, msgEl);
+    list.appendChild(li);
+  }
+
+  banner.hidden = false;
+
+  const dismissBtn = document.getElementById('source-error-dismiss');
+  if (dismissBtn && !dismissBtn.dataset.bound) {
+    dismissBtn.dataset.bound = '1';
+    dismissBtn.addEventListener('click', hideSourceErrorBanner);
+  }
+}
+
+function hideSourceErrorBanner() {
+  const banner = document.getElementById('source-error-banner');
+  if (banner) banner.hidden = true;
 }
 
 /**

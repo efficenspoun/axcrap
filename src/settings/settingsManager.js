@@ -115,13 +115,12 @@ export const settings = {
 
   removeWispServer(index) {
     if (index < 0 || index >= state.wisp.servers.length) return;
-    const removed = state.wisp.servers[index];
     state.wisp.servers.splice(index, 1);
     if (state.wisp.enabled && state.wisp.servers.length === 0) {
       state.wisp.servers.push(...DEFAULTS.wisp.servers);
     }
+    // persist() also notifies; no need for a second notify().
     persist();
-    if (removed) notify();
   },
 
   /**

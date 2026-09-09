@@ -22,8 +22,21 @@ export class SettingsModal {
     this.statusEl = document.getElementById('wisp-status');
     this.cloakSelect = document.getElementById('setting-cloak-mode');
 
-    this.unsubscribe = null;
     this.setupListeners();
+
+    // Subscribe to settings changes so external mutations (e.g. server-list
+    // mutations from other modules) are reflected in the UI.
+    this._unsubscribe = settings.subscribe((next) => {
+      if (!this.overlay?.classList.contains('active')) return;
+      if (this.enabledToggle && this.enabledToggle.checked !== next.wisp.enabled) {
+        this.enabledToggle.checked = next.wisp.enabled;
+        this.serversSection.style.display = next.wisp.enabled ? 'block' : 'none';
+      }
+      if (this.cloakSelect && this.cloakSelect.value !== next.cloak.mode) {
+        this.cloakSelect.value = next.cloak.mode;
+      }
+      this.renderServers();
+    });
   }
 
   setupListeners() {
@@ -145,26 +158,64 @@ export class SettingsModal {
       return;
     }
 
-    this.serversList.innerHTML = servers.map((server, index) => `
-      <div class="wisp-server-row">
-        <span class="wisp-server-rank">${index + 1}</span>
-        <input
-          class="wisp-server-url"
-          value="${server.replace(/["<>&']/g, '')}"
-          readonly
-          spellcheck="false"
-          title="${server}"
-        />
-        <div class="wisp-server-actions">
-          <button type="button" class="wisp-btn" data-action="move" data-index="${index}" data-direction="-1"
-            title="Move up (higher priority)" ${index === 0 ? 'disabled' : ''}>▲</button>
-          <button type="button" class="wisp-btn" data-action="move" data-index="${index}" data-direction="1"
-            title="Move down (lower priority)" ${index === servers.length - 1 ? 'disabled' : ''}>▼</button>
-          <button type="button" class="wisp-btn wisp-btn-danger" data-action="remove" data-index="${index}"
-            title="Remove server">✕</button>
-        </div>
-      </div>
-    `).join('');
+    // Build each row with createElement + textContent so any server URL
+    // containing HTML-meaningful characters is rendered safely. The previous
+    // regex-strip approach removed characters (degrading URLs) rather than
+    // encoding them, and left the title attribute unencoded.
+    const frag = document.createDocumentFragment();
+    servers.forEach((server, index) => {
+      const row = document.createElement('div');
+      row.className = 'wisp-server-row';
+
+      const rank = document.createElement('span');
+      rank.className = 'wisp-server-rank';
+      rank.textContent = String(index + 1);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'wisp-server-url';
+      input.value = server;
+      input.readOnly = true;
+      input.spellcheck = false;
+      input.title = server;
+
+      const actions = document.createElement('div');
+      actions.className = 'wisp-server-actions';
+
+      const moveUp = document.createElement('button');
+      moveUp.type = 'button';
+      moveUp.className = 'wisp-btn';
+      moveUp.dataset.action = 'move';
+      moveUp.dataset.index = String(index);
+      moveUp.dataset.direction = '-1';
+      moveUp.title = 'Move up (higher priority)';
+      moveUp.disabled = index === 0;
+      moveUp.textContent = '\u25b2';
+
+      const moveDown = document.createElement('button');
+      moveDown.type = 'button';
+      moveDown.className = 'wisp-btn';
+      moveDown.dataset.action = 'move';
+      moveDown.dataset.index = String(index);
+      moveDown.dataset.direction = '1';
+      moveDown.title = 'Move down (lower priority)';
+      moveDown.disabled = index === servers.length - 1;
+      moveDown.textContent = '\u25bc';
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'wisp-btn wisp-btn-danger';
+      remove.dataset.action = 'remove';
+      remove.dataset.index = String(index);
+      remove.title = 'Remove server';
+      remove.textContent = '\u2715';
+
+      actions.append(moveUp, moveDown, remove);
+      row.append(rank, input, actions);
+      frag.appendChild(row);
+    });
+
+    this.serversList.replaceChildren(frag);
   }
 
   open() {

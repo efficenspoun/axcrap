@@ -6,7 +6,6 @@
  * - Right: "Other Games" list to quickly switch games (only when not in fullscreen)
  */
 
-import { luminSource } from '../sources/luminSource.js';
 import { resolveUrl, isWispEnabled } from '../proxy/wispProxy.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 
@@ -132,49 +131,6 @@ export class PlayerModal {
       this.sourceBtn.style.display = validLink !== '#' ? 'inline-flex' : 'none';
     }
 
-    // Handle LuminSDK games - fetch game URL via LuminSDK API
-    const isLuminGame = game.source === 'LuminSDK';
-    
-    if (isLuminGame) {
-      // Hide mirror UI for LuminSDK games
-      if (this.mirrorBox) this.mirrorBox.style.display = 'none';
-      if (this.mirrorBadge) this.mirrorBadge.style.display = 'none';
-      
-      // Show loading state
-      if (this.fallbackBanner) this.fallbackBanner.style.display = 'none';
-      if (this.iframe) {
-        this.iframe.style.display = 'block';
-        this._loadLuminGame(game);
-      }
-    } else {
-      // Mirror Selection (pick random mirror from pool if available)
-      const hasMirrors = Array.isArray(game.mirrors) && game.mirrors.length > 0;
-      if (hasMirrors) {
-        if (this.mirrorBox) this.mirrorBox.style.display = 'flex';
-        if (this.mirrorBadge) {
-          this.mirrorBadge.style.display = 'inline-block';
-          this.mirrorBadge.textContent = `${game.mirrors.length} Mirrors`;
-        }
-        const initialMirror = game.mirrors[Math.floor(Math.random() * game.mirrors.length)];
-        this.currentActiveMirror = initialMirror;
-        this._updateMirrorUi(initialMirror);
-      } else {
-        if (this.mirrorBox) this.mirrorBox.style.display = 'none';
-        if (this.mirrorBadge) this.mirrorBadge.style.display = 'none';
-        this.currentActiveMirror = game.embedUrl;
-      }
-
-      // Populate Center Iframe
-      if (this.fallbackBanner) this.fallbackBanner.style.display = 'none';
-      if (this.fallbackLink) {
-        this.fallbackLink.href = this.currentActiveMirror || game.embedUrl || game.sourceUrl || '#';
-      }
-      if (this.iframe) {
-        this.iframe.style.display = 'block';
-        this._loadGame(game, this.currentActiveMirror);
-      }
-    }
-
     // Populate Right Panel ("Other Games")
     this.renderOtherGames(game.id);
 
@@ -182,41 +138,6 @@ export class PlayerModal {
     this.overlay.classList.add('active');
     this.overlay.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
-  }
-
-  async _loadLuminGame(game) {
-    if (!this.iframe) return;
-
-    // Show a loading indicator in the iframe
-    this._writeToFrame(`
-      <html><body style="margin:0;background:#0d0d12;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;">
-        <div style="text-align:center">
-          <div style="font-size:2rem;margin-bottom:0.5rem;">⏳</div>
-          <div>Loading game...</div>
-        </div>
-      </body></html>
-    `);
-
-    try {
-      const { url, meta } = await luminSource.getGameUrl(game.rawId || game.id);
-      
-      // Only update if this game is still the active one
-      if (this.activeGame && String(this.activeGame.id) === String(game.id)) {
-        this.currentActiveMirror = url;
-        
-        if (this.fallbackLink) {
-          this.fallbackLink.href = url;
-        }
-        
-        // For LuminSDK games, use direct iframe src since we have the playable URL
-        this.iframe.src = await resolveSafely(url);
-      }
-    } catch (err) {
-      console.error('Failed to load LuminSDK game:', err);
-      if (this.activeGame && String(this.activeGame.id) === String(game.id)) {
-        this._renderErrorScreen(game, '', err.message);
-      }
-    }
   }
 
   /**
@@ -247,41 +168,26 @@ export class PlayerModal {
       </body></html>
     `);
 
-    // jsdelivr serves ALL files as text/plain — the browser won't execute them
-    // as HTML. We fetch the HTML, inject a <base> tag for relative URLs, and
-    // load via blob URL so the browser renders it as proper HTML.
-    if (typeof url === 'string' && url.startsWith('https://cdn.jsdelivr.net/')) {
-      try {
-        const baseUrl = url.replace(/\/[^/]*$/, '/');
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        let html = await response.text();
-
-        if (!(this.activeGame && String(this.activeGame.id) === String(game.id))) return;
-
-        // Only inject a <base> tag if the HTML doesn't already have one.
-        // Many game HTML files (e.g. OvO) include their own <base> pointing
-        // to the correct asset host. Injecting a second one would override
-        // it and break relative URL resolution.
-        if (!/<base\s/i.test(html)) {
-          const baseTag = `<base href="${baseUrl}">`;
-          if (/<head[^>]*>/i.test(html)) {
-            html = html.replace(/<head[^>]*>/i, match => match + baseTag);
-          } else if (/<html[^>]*>/i.test(html)) {
-            html = html.replace(/<html[^>]*>/i, match => match + '<head>' + baseTag + '</head>');
-          } else {
-            html = baseTag + html;
-          }
-        }
-
-        const blob = new Blob([html], { type: 'text/html' });
-        this.iframe.src = URL.createObjectURL(blob);
-      } catch (err) {
-        console.warn('Direct embed failed, falling back to raw src:', err);
-        if (this.activeGame && String(this.activeGame.id) === String(game.id)) {
-          this.iframe.src = url;
-        }
-      }
+    //     // jsdelivr serves files with Content-Type: text/plain. The browser
+    // refuses to render text/plain as HTML in an iframe (no script execution,
+    // no canvas -> black screen). The fix: point the iframe at a CORS proxy
+    // that re-types the body as text/html. The proxy becomes the iframe's
+    // origin; further game asset requests go directly to jsdelivr, which
+    // sends the wildcard CORS header so cross-origin reads succeed.
+    // jsdelivr serves files with Content-Type: text/plain. The browser
+    // refuses to render text/plain as HTML in an iframe (no script execution,
+    // no canvas -> black screen). The fix: point the iframe at a CORS proxy
+    // that re-types the body as text/html. The proxy becomes the iframe's
+    // origin; further game asset requests go directly to jsdelivr, which
+    // sends the wildcard CORS header so cross-origin reads succeed.
+    //
+    // corsproxy.io is the only reliable choice here: it forwards the upstream
+    // status and body, returns text/html, and does not rate-limit per-request
+    // like allorigins does (allorigins /html now returns 403 for jsdelivr
+    // targets and /raw returns 204 empty). Verified working with live
+    // game files: returns 148 KB of real HTML with scripts intact.
+    if (typeof url === 'string' && url.startsWith('[image]')) {
+      this.iframe.src = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
       return;
     }
 

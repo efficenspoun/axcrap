@@ -55,9 +55,15 @@ export class ReportModal {
       details: details
     };
 
-    storage.submitReport(report);
-    this.close();
-    showToast(`Report submitted for "${this.currentGame.title}". Thank you!`, 'success');
+    const saved = storage.submitReport(report);
+    if (saved) {
+      this.close();
+      showToast(`Report submitted for "${this.currentGame.title}". Thank you!`, 'success');
+    } else {
+      // submitReport returns null on quota errors or storage unavailability.
+      // Keep the modal open so the user can retry, and explain why.
+      showToast('Could not save the report — your browser storage may be full or unavailable.', 'error');
+    }
   }
 
   isOpen() {

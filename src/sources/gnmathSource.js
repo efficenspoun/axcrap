@@ -1,4 +1,7 @@
 import { normalizeGame } from './schema.js';
+import { fetchJsonWithCorsFallback } from './fetchJson.js';
+
+const GAMES_SNAPSHOT = '/data/gnmath-games.snapshot.json';
 
 export const gnmathSource = {
   id: 'gnmath',
@@ -12,45 +15,40 @@ export const gnmathSource = {
    * Scrape and parse games directly in the browser
    */
   async scrape() {
-    const response = await fetch(this.endpoint);
-    if (!response.ok) {
-      throw new Error(`Failed to scrape gnmath source: ${response.status} ${response.statusText}`);
-    }
-
-    const rawZones = await response.json();
-    if (!Array.isArray(rawZones)) {
+    const rawGames = await fetchJsonWithCorsFallback(this.endpoint, { snapshot: GAMES_SNAPSHOT });
+    if (!Array.isArray(rawGames)) {
       throw new Error('Invalid scraped payload: expected array of games');
     }
 
     const games = [];
 
-    for (const zone of rawZones) {
-      // Filter out discord suggestions or invalid entries
-      if (!zone || zone.id <= 0 || !zone.url || zone.url.includes('discord.gg')) {
-        continue;
-      }
+    for (const game of rawGames) {
+      if (!game || !game.url) continue;
 
-      // Resolve asset templates
-      const coverUrl = (zone.cover || '')
+      // Filter out discord suggestions or invalid entries
+      if (game.id <= 0 || game.url.includes('discord.gg')) continue;
+
+      // Resolve asset templates (live data has {COVER_URL}/{HTML_URL}, snapshot has resolved URLs)
+      const coverUrl = (game.cover || '')
         .replace('{COVER_URL}', this.coverBase)
         .replace('{HTML_URL}', this.htmlBase);
 
-      const embedUrl = (zone.url || '')
+      const embedUrl = (game.url || '')
         .replace('{HTML_URL}', this.htmlBase)
         .replace('{COVER_URL}', this.coverBase);
 
       const normalized = normalizeGame({
-        id: `gnmath_${zone.id}`,
-        name: zone.name,
-        author: zone.author,
-        description: zone.description, // Will default to 'Not provided'
+        id: `gnmath_${game.id}`,
+        name: game.name,
+        author: game.author,
+        description: game.description,
         source: this.name,
-        authorLink: zone.authorLink || this.homepage,
+        authorLink: game.authorLink || this.homepage,
         url: embedUrl,
         cover: coverUrl,
         fallbackThumbnail: '/assets/placeholders/default-game.svg',
         directEmbed: true,
-        special: zone.special
+        special: game.special
       }, this.name);
 
       if (normalized) {

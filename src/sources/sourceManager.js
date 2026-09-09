@@ -1,6 +1,5 @@
 import { gnmathSource } from './gnmathSource.js';
 import { duckmathSource } from './duckmathSource.js';
-import { luminSource } from './luminSource.js';
 import { velaraSource } from './velaraSource.js';
 import { truffledSource } from './truffledSource.js';
 import { cacheStore } from '../services/cacheStore.js';
@@ -18,7 +17,6 @@ export class SourceManager {
     // Register default sources
     this.registerSource(gnmathSource);
     this.registerSource(duckmathSource);
-    this.registerSource(luminSource);
     this.registerSource(velaraSource);
     this.registerSource(truffledSource);
   }
@@ -168,20 +166,51 @@ export class SourceManager {
     const errors = [];
     const scrapedSourceIds = [];
 
-    // Run active sources concurrently
-    for (const [id, source] of this.sources.entries()) {
-      if (source.enabled === false) continue;
+    // Run active sources concurrently so the slowest source — not the sum of
+    // all sources — sets the first-paint latency. We fire the progress
+    // callback up front (before awaiting) so the UI updates immediately for
+    // each source as it begins scraping.
+    const enabledSources = Array.from(this.sources.entries())
+      .filter(([, s]) => s.enabled !== false);
 
-      try {
+    if (onProgress && enabledSources.length > 0) {
+      onProgress({
+        status: 'scraping_sources',
+        sources: enabledSources.map(([, s]) => s.name)
+      });
+    }
+
+    const settled = await Promise.allSettled(
+      enabledSources.map(async ([id, source]) => {
         if (onProgress) onProgress({ status: 'scraping_source', source: source.name });
-        const sourceGames = await source.scrape();
+        try {
+          const sourceGames = await source.scrape();
+          return { id, source, sourceGames };
+        } catch (err) {
+          // Re-throw with the source id/name attached so the loop below can
+          // attribute failures correctly even if the inner code lost them.
+          err.sourceId = id;
+          err.sourceName = source.name;
+          throw err;
+        }
+      })
+    );
+
+    for (const result of settled) {
+      if (result.status === 'fulfilled') {
+        const { id, source, sourceGames } = result.value;
         if (Array.isArray(sourceGames)) {
           scrapedSourceIds.push(id);
           allGames.push(...sourceGames);
+        } else {
+          errors.push({ source: source.name, error: 'Scrape returned non-array' });
         }
-      } catch (err) {
-        console.error(`Error scraping source "${source.name}":`, err);
-        errors.push({ source: source.name, error: err.message });
+      } else {
+        const reason = result.reason || {};
+        const name = reason.sourceName || reason.source || 'unknown';
+        const message = reason.message || String(reason);
+        console.error(`Error scraping source "${name}":`, reason);
+        errors.push({ source: name, error: message });
       }
     }
 

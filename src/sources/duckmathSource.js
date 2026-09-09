@@ -1,4 +1,5 @@
 import { normalizeGame } from './schema.js';
+import { fetchJsonWithCorsFallback } from './fetchJson.js';
 
 export const DB0_BASE = 'https://classroomlesson.github.io/basic-ruffle-player';
 export const DB0_MIRRORS = [
@@ -57,8 +58,8 @@ export const duckmathSource = {
    * Scrape DuckMath database and generate mirror lists for all games
    */
   async scrape() {
-    const response = await fetch(this.endpoint, {
-      method: 'GET',
+    const rawApps = await fetchJsonWithCorsFallback(this.endpoint, {
+      snapshot: '/data/duckmath-games.snapshot.json',
       headers: {
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'apikey': SUPABASE_KEY,
@@ -66,11 +67,6 @@ export const duckmathSource = {
       }
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to scrape DuckMath: ${response.status} ${response.statusText}`);
-    }
-
-    const rawApps = await response.json();
     if (!Array.isArray(rawApps)) {
       throw new Error('Invalid DuckMath scraped payload: expected array of games');
     }
@@ -81,21 +77,22 @@ export const duckmathSource = {
       if (!app || !app.link) continue;
 
       const rawLink = app.link.trim();
-      const dataSource = app.url_data_source;
-      const mirrors = [];
+      const mirrors = app.mirrors || [];
 
-      // Resolve available mirrors based on data source and URL prefix
-      if (dataSource === 0 || rawLink.startsWith(DB0_BASE)) {
-        for (const mirror of DB0_MIRRORS) {
-          mirrors.push(rawLink.replace(DB0_BASE, mirror));
+      // If no mirrors pre-computed (live fetch), compute them now
+      if (mirrors.length === 0) {
+        const dataSource = app.url_data_source;
+        if (dataSource === 0 || rawLink.startsWith(DB0_BASE)) {
+          for (const mirror of DB0_MIRRORS) {
+            mirrors.push(rawLink.replace(DB0_BASE, mirror));
+          }
+        } else if (dataSource === 1 || rawLink.startsWith(DB1_BASE)) {
+          for (const mirror of DB1_MIRRORS) {
+            mirrors.push(rawLink.replace(DB1_BASE, mirror));
+          }
+        } else {
+          mirrors.push(rawLink);
         }
-      } else if (dataSource === 1 || rawLink.startsWith(DB1_BASE)) {
-        for (const mirror of DB1_MIRRORS) {
-          mirrors.push(rawLink.replace(DB1_BASE, mirror));
-        }
-      } else {
-        // Direct / external link (e.g., Scratch, Turbowarp)
-        mirrors.push(rawLink);
       }
 
       // Pick a random mirror initially for load balancing

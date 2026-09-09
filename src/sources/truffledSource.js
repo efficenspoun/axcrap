@@ -7,15 +7,22 @@ const GAMES_SNAPSHOT = '/data/truffled-games.snapshot.json';
 const PRIMARY_ORIGIN = 'https://truffled.lol';
 
 /**
- * All of these domains are hosted on the same origin server (205.209.125.106),
- * so any game path is reachable from every domain. If one host is blocked or
- * unreachable the player can flip to another via the in-app mirror switcher.
- * Order matters: the primary origin is used for the default embed URL.
+ * Mirror origins for Truffled. Historically the catalog pointed at a couple
+ * of unrelated third-party domains claimed to live on the same server IP,
+ * but those names look like hijacked / typo-squat hosts and we have no
+ * independent confirmation they're operated by the Truffled maintainer.
+ *
+ * To avoid redirecting users to potentially hostile origins we now only
+ * mirror against domains that resolve under truffled.lol itself (primary
+ * plus a www. alias). If the primary goes down the user will still see a
+ * working "Change Mirror" button — it just won't have anywhere to switch to
+ * until the primary recovers. Operators that want richer mirror lists can
+ * extend `MIRROR_ORIGINS` after vetting the host's TLS certificate and
+ * WHOIS registration.
  */
 const MIRROR_ORIGINS = [
   PRIMARY_ORIGIN,
-  'https://gucci-morty.americansolidarityparty.net',
-  'https://shar.centrodiagnosticogenetico.com'
+  'https://www.truffled.lol'
 ];
 
 /**

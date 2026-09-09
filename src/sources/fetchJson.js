@@ -15,8 +15,30 @@ const CORS_PROXIES = [
 const DIRECT_TIMEOUT_MS = 12000;
 const REQUEST_TIMEOUT_MS = 20000;
 
+// Headers that must never leak to public CORS proxies. Public proxy services
+// (allorigins.win, corsproxy.io, codetabs.com) have no SLA or privacy
+// guarantees and may log request headers verbatim. Bearer tokens / API keys
+// included here would be exposed to every proxy in the fallback chain.
+const SENSITIVE_HEADER_NAMES = new Set([
+  'authorization',
+  'apikey',
+  'x-api-key',
+  'cookie'
+]);
+
 function isFileProtocol() {
   return typeof location !== 'undefined' && location.protocol === 'file:';
+}
+
+function stripSensitiveHeaders(headers) {
+  if (!headers) return {};
+  const safe = {};
+  for (const [k, v] of Object.entries(headers)) {
+    if (!SENSITIVE_HEADER_NAMES.has(k.toLowerCase())) {
+      safe[k] = v;
+    }
+  }
+  return safe;
 }
 
 async function readBundledSnapshot(snapshot) {
@@ -37,6 +59,8 @@ async function readBundledSnapshot(snapshot) {
 }
 
 export async function fetchJsonWithCorsFallback(target, options = {}) {
+  const headers = options.headers || {};
+
   // For local single-file builds, use the bundled snapshot first.  This makes
   // the catalog independent of CORS/proxy availability while preserving live
   // network refreshes for normal http(s) deployments.
@@ -51,7 +75,7 @@ export async function fetchJsonWithCorsFallback(target, options = {}) {
   const directController = new AbortController();
   const directTimer = setTimeout(() => directController.abort(), DIRECT_TIMEOUT_MS);
   try {
-    const res = await fetch(target, { signal: directController.signal });
+    const res = await fetch(target, { signal: directController.signal, headers });
     if (res.ok) return await res.json();
     console.warn(`Direct fetch returned ${res.status} for ${target}`);
   } catch (err) {
@@ -60,12 +84,16 @@ export async function fetchJsonWithCorsFallback(target, options = {}) {
     clearTimeout(directTimer);
   }
 
+  // Public CORS proxies must NEVER receive sensitive headers (auth tokens,
+  // cookies, api keys). Build a sanitized copy once per call.
+  const proxyHeaders = stripSensitiveHeaders(headers);
+
   for (let i = 0; i < CORS_PROXIES.length; i++) {
     const proxiedUrl = CORS_PROXIES[i](target);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const res = await fetch(proxiedUrl, { signal: controller.signal });
+      const res = await fetch(proxiedUrl, { signal: controller.signal, headers: proxyHeaders });
       if (res.ok) return await res.json();
     } catch (err) {
       console.warn(`CORS proxy ${i + 1} failed for ${target}:`, err);

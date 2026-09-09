@@ -1,6 +1,7 @@
 /**
  * Filter and Search Controls UI
  */
+import { debounce } from '../utils/debounce.js';
 
 export class FilterControls {
   constructor(options = {}) {
@@ -16,6 +17,11 @@ export class FilterControls {
 
     this.currentSource = 'ALL';
     this.currentQuery = '';
+
+    // Debounce search input so we don't re-render the whole grid on every
+    // keystroke. 150ms is short enough to feel instant, long enough to skip
+    // intermediate states during fast typing.
+    this._debouncedTrigger = debounce(() => this.triggerChange(), 150);
 
     this.setupListeners();
   }
@@ -34,7 +40,7 @@ export class FilterControls {
         if (this.searchClear) {
           this.searchClear.style.display = this.currentQuery ? 'block' : 'none';
         }
-        this.triggerChange();
+        this._debouncedTrigger();
       });
     }
 
@@ -54,7 +60,7 @@ export class FilterControls {
   populateSources(sources) {
     if (!this.sourceSelect) return;
     const uniqueSources = Array.from(new Set(sources)).filter(Boolean).sort();
-    
+
     this.sourceSelect.innerHTML = '<option value="ALL">All Sources</option>';
     uniqueSources.forEach(src => {
       const opt = document.createElement('option');
@@ -66,7 +72,11 @@ export class FilterControls {
 
   updateCount(count, sourceName = null) {
     if (this.catalogCount) {
-      this.catalogCount.textContent = `${count} ${count === 1 ? 'game' : 'games'}`;
+      // Allow callers to pass a non-number to display arbitrary status text
+      // (e.g. 'Scraping DuckMath...') without a misleading 'X games' prefix.
+      this.catalogCount.textContent = typeof count === 'number'
+        ? `${count} ${count === 1 ? 'game' : 'games'}`
+        : String(count ?? '');
     }
     if (this.activeSourceName) {
       this.activeSourceName.textContent = sourceName || (this.currentSource === 'ALL' ? 'All Sources' : this.currentSource);
@@ -77,6 +87,8 @@ export class FilterControls {
     if (this.searchInput) this.searchInput.value = '';
     this.currentQuery = '';
     if (this.searchClear) this.searchClear.style.display = 'none';
+    // Drop any pending debounced trigger so the UI is in sync immediately.
+    this._debouncedTrigger.cancel();
     if (this.searchInput) this.searchInput.focus();
     this.triggerChange();
   }
@@ -87,6 +99,7 @@ export class FilterControls {
     if (this.searchClear) this.searchClear.style.display = 'none';
     if (this.sourceSelect) this.sourceSelect.value = 'ALL';
     this.currentSource = 'ALL';
+    this._debouncedTrigger.cancel();
     this.triggerChange();
   }
 
