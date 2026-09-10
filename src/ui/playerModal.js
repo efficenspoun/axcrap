@@ -234,6 +234,7 @@ export class PlayerModal {
     this._revokeBlobUrl();
     try {
       this.iframe.removeAttribute('srcdoc');
+      this.iframe.removeAttribute('src');
       // Test if contentDocument is accessible without cross-origin exceptions
       let accessible = false;
       try {
@@ -243,6 +244,8 @@ export class PlayerModal {
       }
       if (!accessible) {
         const newFrame = this.iframe.cloneNode(false);
+        newFrame.removeAttribute('src');
+        newFrame.removeAttribute('srcdoc');
         this.iframe.replaceWith(newFrame);
         this.iframe = newFrame;
       }
@@ -382,6 +385,9 @@ export class PlayerModal {
 
   _renderWithDocumentWrite(html) {
     this._resetIframe();
+    // Ensure no stale src/srcdoc interferes with document.write
+    this.iframe.removeAttribute('src');
+    this.iframe.removeAttribute('srcdoc');
     try {
       const doc = this.iframe.contentDocument || this.iframe.contentWindow?.document;
       if (doc) {
