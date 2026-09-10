@@ -433,7 +433,7 @@ export class PlayerModal {
 
   _renderWithCorsProxy(url) {
     this._resetIframe();
-    this.iframe.src = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+    this.iframe.src = `https://corsproxy.io/?key=3072d12a&url=${encodeURIComponent(url)}`;
   }
 
   _renderErrorScreen(game, url, message, activeMethod = '') {
