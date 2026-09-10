@@ -3,7 +3,6 @@ import { fetchJsonWithCorsFallback } from './fetchJson.js';
 import { slugify } from '../utils/slugify.js';
 
 const GAMES_ENDPOINT = 'https://velara.cc/data/games.json';
-const GAMES_SNAPSHOT = '/data/velara-games.snapshot.json';
 const THUMBNAIL_CDN = 'https://cdn.jsdelivr.net/gh/dragonx-astra/velara-assets@main/img';
 const VELARA_ORIGIN = 'https://velara.cc';
 
@@ -58,7 +57,7 @@ export const velaraSource = {
   homepage: 'https://velara.cc',
 
   async scrape() {
-    const rawGames = await fetchJsonWithCorsFallback(GAMES_ENDPOINT, { snapshot: GAMES_SNAPSHOT });
+    const rawGames = await fetchJsonWithCorsFallback(GAMES_ENDPOINT);
     if (!Array.isArray(rawGames)) {
       throw new Error('Invalid scraped payload: expected array of games');
     }

@@ -1,34 +1,61 @@
 /**
  * Shared JSON fetch with CORS fallback.
  *
- * In a normal web deployment, try the source directly and then public CORS
- * proxies.  In a `file://` build, remote JSON fetches may be blocked by the
- * browser's opaque/null origin, so callers can provide a bundled snapshot.
+ * Scraping strategy — a hedged direct request with a concurrent proxy race:
+ *
+ *   1. The direct request to the source fires immediately.
+ *   2. If it settles quickly we are done: a success returns straight away,
+ *      and a fast failure escalates to the proxies instantly.
+ *   3. If it is still pending after HEDGE_DELAY_MS (e.g. a firewall silently
+ *      blackholing packets instead of rejecting them), every public CORS
+ *      proxy is started at once. The first candidate — the direct request
+ *      included — to return valid JSON wins, and every losing in-flight
+ *      request is aborted.
+ *
+ * This replaces both the old sequential chain (direct -> proxy 1 -> proxy 2
+ * -> proxy 3), whose worst case added up to ~72s per source, and the old
+ * bundled-snapshot fallback: live data is now the only data. Whatever a
+ * scrape yields is cached in the browser by SourceManager (IndexedDB with a
+ * localStorage mirror), which is what keeps the catalog usable while a
+ * source is temporarily unreachable.
  */
 
 const CORS_PROXIES = [
-  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url) => `https://corsproxy.io/?key=3072d12a&url=${encodeURIComponent(url)}`,
-  (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+  {
+    id: 'allorigins',
+    build: (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+  },
+  {
+    id: 'corsproxy',
+    build: (url) => `https://corsproxy.io/?key=3072d12a&url=${encodeURIComponent(url)}`
+  },
+  {
+    id: 'codetabs',
+    build: (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+  }
 ];
 
-const DIRECT_TIMEOUT_MS = 12000;
-const REQUEST_TIMEOUT_MS = 20000;
+// Healthy CDNs answer well within a second; 8s only bites on genuinely
+// broken routes. Public proxies are slower, so they get a larger budget.
+const DIRECT_TIMEOUT_MS = 8000;
+const PROXY_TIMEOUT_MS = 15000;
+
+// Grace window the direct request gets before the CORS proxies join the
+// race. Small enough that a blackholed network only delays a source by a
+// couple of seconds, large enough that a healthy CDN is never raced against
+// third-party proxies.
+const HEDGE_DELAY_MS = 2500;
 
 // Headers that must never leak to public CORS proxies. Public proxy services
 // (allorigins.win, corsproxy.io, codetabs.com) have no SLA or privacy
 // guarantees and may log request headers verbatim. Bearer tokens / API keys
-// included here would be exposed to every proxy in the fallback chain.
+// included here would be exposed to every proxy in the race.
 const SENSITIVE_HEADER_NAMES = new Set([
   'authorization',
   'apikey',
   'x-api-key',
   'cookie'
 ]);
-
-function isFileProtocol() {
-  return typeof location !== 'undefined' && location.protocol === 'file:';
-}
 
 function stripSensitiveHeaders(headers) {
   if (!headers) return {};
@@ -41,90 +68,182 @@ function stripSensitiveHeaders(headers) {
   return safe;
 }
 
-async function readBundledSnapshot(snapshot) {
-  if (!snapshot) return null;
-  try {
-    // fetch(file://...) is browser-dependent. The single-file builder replaces
-    // the marker below with an inline JSON object, avoiding a local fetch.
-    if (typeof window !== 'undefined' && window.__AXCRAP_SNAPSHOTS__?.[snapshot]) {
-      return window.__AXCRAP_SNAPSHOTS__[snapshot];
-    }
-
-    // In Node.js environment (e.g. test scripts), read directly from disk
-    if (typeof process !== 'undefined' && process.versions?.node && (typeof window === 'undefined' || !window.location)) {
-      try {
-        const fsMod = 'node:fs/promises';
-        const pathMod = 'node:path';
-        const { readFile } = await import(/* @vite-ignore */ fsMod);
-        const { resolve } = await import(/* @vite-ignore */ pathMod);
-        const cleanPath = snapshot.replace(/^\/+/, '');
-        const fullPath = resolve(process.cwd(), 'public', cleanPath);
-        const data = await readFile(fullPath, 'utf-8');
-        return JSON.parse(data);
-      } catch {
-        // continue
-      }
-    }
-
-    const res = await fetch(snapshot);
-    if (res.ok) return await res.json();
-  } catch (err) {
-    console.warn(`Snapshot fetch failed for ${snapshot}:`, err);
-  }
-  return null;
+function hasHeaderNamed(headers, name) {
+  return Object.keys(headers || {}).some((k) => k.toLowerCase() === name);
 }
 
+/**
+ * fetch() with a per-request timeout that can also be aborted from the
+ * outside via `signal`, so the winner of the race can cancel every losing
+ * request at once.
+ */
+async function fetchWithTimeout(url, headers, timeoutMs, signal) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onOuterAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', onOuterAbort, { once: true });
+    }
+  }
+  try {
+    // `referrerPolicy: 'no-referrer'` keeps the app's own URL from being
+    // sent to third-party proxy services (matching the hardened iframes).
+    return await fetch(url, {
+      signal: controller.signal,
+      headers,
+      referrerPolicy: 'no-referrer'
+    });
+  } finally {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onOuterAbort);
+  }
+}
+
+/**
+ * One fetch candidate: resolves with the parsed JSON payload, rejects with a
+ * labelled Error for anything else (network failure, timeout, HTTP error
+ * status, or a 200 response whose body is not valid JSON — proxies have been
+ * observed returning HTML error pages with a 200 status).
+ */
+async function attemptJson(candidate, signal) {
+  const res = await fetchWithTimeout(candidate.url, candidate.headers, candidate.timeoutMs, signal);
+  if (!res.ok) {
+    throw new Error(`${candidate.label} returned HTTP ${res.status}`);
+  }
+  try {
+    return await res.json();
+  } catch {
+    throw new Error(`${candidate.label} returned a non-JSON payload`);
+  }
+}
+
+/**
+ * Resolve with the value of the first promise that fulfills; reject with the
+ * array of rejection reasons once every promise has rejected. Losing
+ * promises that settle later are ignored (the caller aborts them anyway).
+ */
+function firstSuccess(promises) {
+  return new Promise((resolve, reject) => {
+    let remaining = promises.length;
+    const failures = [];
+    if (remaining === 0) {
+      reject([]);
+      return;
+    }
+    for (const p of promises) {
+      p.then(resolve, (err) => {
+        failures.push(err);
+        remaining -= 1;
+        if (remaining === 0) reject(failures);
+      });
+    }
+  });
+}
+
+/**
+ * Fetch JSON from `target`, escalating to public CORS proxies when needed.
+ *
+ * @param {string} target - Absolute URL of the JSON endpoint.
+ * @param {object} [options]
+ * @param {object} [options.headers] - Headers for the direct request.
+ *   Sensitive headers (authorization, apikey, x-api-key, cookie) are never
+ *   forwarded to public CORS proxies.
+ * @param {number} [options.directTimeoutMs] - Per-request timeout for the
+ *   direct request (default 8000).
+ * @param {number} [options.proxyTimeoutMs] - Per-request timeout for each
+ *   proxy request (default 15000).
+ * @param {number} [options.hedgeDelayMs] - How long the direct request gets
+ *   before the proxies join the race (default 2500; mainly overridden in
+ *   tests).
+ * @returns {Promise<*>} Parsed JSON payload.
+ */
 export async function fetchJsonWithCorsFallback(target, options = {}) {
   const headers = options.headers || {};
 
-  // For local single-file builds, use the bundled snapshot first. This makes
-  // the catalog independent of CORS/proxy availability while preserving live
-  // network refreshes for normal http(s) deployments.
-  if (isFileProtocol() && options.snapshot) {
-    const snapshot = await readBundledSnapshot(options.snapshot);
-    if (snapshot != null) {
-      console.info(`Using bundled snapshot for ${target} (file:// mode)`);
-      return snapshot;
-    }
-  }
+  const directTimeoutMs = options.directTimeoutMs ?? DIRECT_TIMEOUT_MS;
+  const proxyTimeoutMs = options.proxyTimeoutMs ?? PROXY_TIMEOUT_MS;
+  const hedgeDelayMs = options.hedgeDelayMs ?? HEDGE_DELAY_MS;
 
-  const directController = new AbortController();
-  const directTimer = setTimeout(() => directController.abort(), DIRECT_TIMEOUT_MS);
-  try {
-    const res = await fetch(target, { signal: directController.signal, headers });
-    if (res.ok) return await res.json();
-    console.warn(`Direct fetch returned ${res.status} for ${target}`);
-  } catch (err) {
-    console.warn(`Direct fetch failed for ${target}:`, err);
-  } finally {
-    clearTimeout(directTimer);
-  }
+  // Ask for JSON explicitly unless the caller already pinned an Accept
+  // header. ("application/json" is a CORS-safelisted Accept value, so this
+  // does not trigger a preflight.)
+  const directHeaders = hasHeaderNamed(headers, 'accept')
+    ? headers
+    : { ...headers, Accept: 'application/json' };
 
   // Public CORS proxies must NEVER receive sensitive headers (auth tokens,
-  // cookies, api keys). Build a sanitized copy once per call.
-  const proxyHeaders = stripSensitiveHeaders(headers);
+  // cookies, API keys). Build the sanitized copy once per call.
+  const proxyHeaders = stripSensitiveHeaders(directHeaders);
 
-  for (let i = 0; i < CORS_PROXIES.length; i++) {
-    const proxiedUrl = CORS_PROXIES[i](target);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  // Whatever candidate wins, every losing in-flight request is cancelled
+  // through this signal so the sockets close immediately.
+  const raceController = new AbortController();
+
+  const directCandidate = {
+    label: 'Direct request',
+    url: target,
+    headers: directHeaders,
+    timeoutMs: directTimeoutMs
+  };
+  const proxyCandidates = CORS_PROXIES.map((proxy) => ({
+    label: `CORS proxy ${proxy.id}`,
+    url: proxy.build(target),
+    headers: proxyHeaders,
+    timeoutMs: proxyTimeoutMs
+  }));
+
+  let hedgeTimerId = null;
+  try {
+    const directPromise = attemptJson(directCandidate, raceController.signal);
+    const directSettled = directPromise.then(
+      (value) => ({ ok: true, value }),
+      (err) => ({ ok: false, err })
+    );
+    const hedgeElapsed = new Promise((resolve) => {
+      hedgeTimerId = setTimeout(() => resolve('hedge-elapsed'), hedgeDelayMs);
+    });
+
+    const first = await Promise.race([directSettled, hedgeElapsed]);
+
+    if (first !== 'hedge-elapsed' && first.ok) {
+      // Healthy network: the direct request answered within the grace
+      // window and no proxy was ever contacted.
+      return first.value;
+    }
+
+    if (first === 'hedge-elapsed') {
+      console.warn(
+        `Direct fetch for ${target} still pending after ${hedgeDelayMs}ms; ` +
+        `racing ${proxyCandidates.length} CORS proxies`
+      );
+    } else {
+      console.warn(`Direct fetch failed for ${target}: ${first.err?.message || first.err}`);
+    }
+
+    // Escalation: race every candidate — including the possibly-slow direct
+    // request — and let the first valid JSON payload win.
+    const inFlight = [
+      directPromise,
+      ...proxyCandidates.map((candidate) => attemptJson(candidate, raceController.signal))
+    ];
+
     try {
-      const res = await fetch(proxiedUrl, { signal: controller.signal, headers: proxyHeaders });
-      if (res.ok) return await res.json();
-    } catch (err) {
-      console.warn(`CORS proxy ${i + 1} failed for ${target}:`, err);
-    } finally {
-      clearTimeout(timer);
+      return await firstSuccess(inFlight);
+    } catch (failures) {
+      const reasons = [...new Set(
+        (Array.isArray(failures) ? failures : [failures])
+          .map((e) => (e && e.message) || String(e))
+      )];
+      throw new Error(
+        `Unable to fetch ${target} (direct request and all ${proxyCandidates.length} ` +
+        `CORS proxies failed): ${reasons.join('; ')}`
+      );
     }
+  } finally {
+    if (hedgeTimerId !== null) clearTimeout(hedgeTimerId);
+    raceController.abort();
   }
-
-  if (options.snapshot) {
-    const snapshot = await readBundledSnapshot(options.snapshot);
-    if (snapshot != null) {
-      console.warn(`Falling back to bundled snapshot for ${target}`);
-      return snapshot;
-    }
-  }
-
-  throw new Error(`Unable to fetch ${target} (direct request and CORS proxies blocked)`);
 }

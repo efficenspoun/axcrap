@@ -3,7 +3,6 @@ import { fetchJsonWithCorsFallback } from './fetchJson.js';
 import { slugify } from '../utils/slugify.js';
 
 const GAMES_ENDPOINT = 'https://truffled.lol/js/json/g.json';
-const GAMES_SNAPSHOT = '/data/truffled-games.snapshot.json';
 const PRIMARY_ORIGIN = 'https://truffled.lol';
 
 /**
@@ -63,7 +62,7 @@ export const truffledSource = {
   homepage: PRIMARY_ORIGIN,
 
   async scrape() {
-    const payload = await fetchJsonWithCorsFallback(GAMES_ENDPOINT, { snapshot: GAMES_SNAPSHOT });
+    const payload = await fetchJsonWithCorsFallback(GAMES_ENDPOINT);
     const rawGames = Array.isArray(payload) ? payload : payload?.games;
     if (!Array.isArray(rawGames)) {
       throw new Error('Invalid scraped payload: expected { games: [...] }');
