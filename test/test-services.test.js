@@ -19,7 +19,7 @@ globalThis.localStorage = {
 };
 
 const { storage } = await import('../src/services/storage.js');
-const { settings } = await import('../src/settings/settingsManager.js');
+const { settings, VALID_EMBED_METHODS } = await import('../src/settings/settingsManager.js');
 
 // ───────────────────────── storage ─────────────────────────
 test('storage.getReports: returns [] when no reports exist', () => {
@@ -59,6 +59,22 @@ test('settings: defaults are applied on a clean localStorage', () => {
   assert.ok(Array.isArray(settings.wisp.servers));
   assert.ok(settings.wisp.servers.length > 0);
   assert.equal(settings.cloak.mode, 'none');
+  assert.equal(settings.embedMethod, 'document.write');
+});
+
+test('settings.setEmbedMethod: accepts all valid embed methods', () => {
+  for (const method of VALID_EMBED_METHODS) {
+    assert.equal(settings.setEmbedMethod(method), true);
+    assert.equal(settings.embedMethod, method);
+  }
+});
+
+test('settings.setEmbedMethod: rejects invalid embed methods', () => {
+  const current = settings.embedMethod;
+  assert.equal(settings.setEmbedMethod('invalid_method'), false);
+  assert.equal(settings.setEmbedMethod(''), false);
+  assert.equal(settings.setEmbedMethod(null), false);
+  assert.equal(settings.embedMethod, current);
 });
 
 test('settings.addWispServer: rejects invalid URLs', () => {
@@ -96,6 +112,8 @@ test('settings.subscribe: notifies listeners on change', () => {
   settings.setCloakMode('blob');
   assert.ok(received);
   assert.equal(received.cloak.mode, 'blob');
+  settings.setEmbedMethod('srcdoc');
+  assert.equal(received.embed.method, 'srcdoc');
   unsubscribe();
 });
 

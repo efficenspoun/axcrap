@@ -44,10 +44,26 @@ function stripSensitiveHeaders(headers) {
 async function readBundledSnapshot(snapshot) {
   if (!snapshot) return null;
   try {
-    // fetch(file://...) is browser-dependent.  The single-file builder replaces
+    // fetch(file://...) is browser-dependent. The single-file builder replaces
     // the marker below with an inline JSON object, avoiding a local fetch.
     if (typeof window !== 'undefined' && window.__AXCRAP_SNAPSHOTS__?.[snapshot]) {
       return window.__AXCRAP_SNAPSHOTS__[snapshot];
+    }
+
+    // In Node.js environment (e.g. test scripts), read directly from disk
+    if (typeof process !== 'undefined' && process.versions?.node && (typeof window === 'undefined' || !window.location)) {
+      try {
+        const fsMod = 'node:fs/promises';
+        const pathMod = 'node:path';
+        const { readFile } = await import(/* @vite-ignore */ fsMod);
+        const { resolve } = await import(/* @vite-ignore */ pathMod);
+        const cleanPath = snapshot.replace(/^\/+/, '');
+        const fullPath = resolve(process.cwd(), 'public', cleanPath);
+        const data = await readFile(fullPath, 'utf-8');
+        return JSON.parse(data);
+      } catch {
+        // continue
+      }
     }
 
     const res = await fetch(snapshot);
@@ -61,7 +77,7 @@ async function readBundledSnapshot(snapshot) {
 export async function fetchJsonWithCorsFallback(target, options = {}) {
   const headers = options.headers || {};
 
-  // For local single-file builds, use the bundled snapshot first.  This makes
+  // For local single-file builds, use the bundled snapshot first. This makes
   // the catalog independent of CORS/proxy availability while preserving live
   // network refreshes for normal http(s) deployments.
   if (isFileProtocol() && options.snapshot) {

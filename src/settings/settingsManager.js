@@ -8,11 +8,26 @@
  *   wisp: {
  *     enabled: boolean,
  *     servers: string[]           // ordered by priority (index 0 = first choice)
+ *   },
+ *   cloak: {
+ *     mode: string
+ *   },
+ *   embed: {
+ *     method: string              // 'document.write' | 'srcdoc' | 'blob' | 'data_url' | 'direct' | 'cors_proxy'
  *   }
  * }
  */
 
 const STORAGE_KEY = 'clean_arcade_settings_v1';
+
+export const VALID_EMBED_METHODS = [
+  'document.write',
+  'srcdoc',
+  'blob',
+  'data_url',
+  'direct',
+  'cors_proxy'
+];
 
 const DEFAULTS = {
   wisp: {
@@ -21,6 +36,9 @@ const DEFAULTS = {
   },
   cloak: {
     mode: 'none'
+  },
+  embed: {
+    method: 'document.write'
   }
 };
 
@@ -45,6 +63,9 @@ function load() {
     }
     if (parsed?.cloak && ['none', 'about_blank', 'blob', 'data_url'].includes(parsed.cloak.mode)) {
       merged.cloak.mode = parsed.cloak.mode;
+    }
+    if (parsed?.embed && VALID_EMBED_METHODS.includes(parsed.embed.method)) {
+      merged.embed.method = parsed.embed.method;
     }
     return merged;
   } catch (e) {
@@ -83,6 +104,14 @@ export const settings = {
     return state.cloak;
   },
 
+  get embed() {
+    return state.embed;
+  },
+
+  get embedMethod() {
+    return state.embed.method;
+  },
+
   subscribe(fn) {
     listeners.add(fn);
     return () => listeners.delete(fn);
@@ -104,6 +133,15 @@ export const settings = {
     return true;
   },
 
+  setEmbedMethod(method) {
+    if (!method || typeof method !== 'string' || !VALID_EMBED_METHODS.includes(method.trim())) {
+      return false;
+    }
+    state.embed.method = method.trim();
+    persist();
+    return true;
+  },
+
   addWispServer(url) {
     const clean = String(url || '').trim();
     if (!/^(wss?|ws):\/\/\S+$/i.test(clean)) return false;
@@ -119,7 +157,6 @@ export const settings = {
     if (state.wisp.enabled && state.wisp.servers.length === 0) {
       state.wisp.servers.push(...DEFAULTS.wisp.servers);
     }
-    // persist() also notifies; no need for a second notify().
     persist();
   },
 

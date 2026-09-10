@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "node --test test/test-utils.test.js test/test-cloak.test.js test/test-services.test.js test/test-sourceManager.test.js test/test-toast.test.js && node test-app.cjs",
     "test:smoke": "node test-app.cjs",
-    "test:unit": "node --test test/"
+    "test:unit": "node --test test/test-utils.test.js test/test-cloak.test.js test/test-services.test.js test/test-sourceManager.test.js test/test-toast.test.js"
   },
   "devDependencies": {
     "vite": "^8.2.2"

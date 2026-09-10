@@ -3,6 +3,8 @@
  * - First setting: Wisp proxy toggle.
  * - Maintains an ordered list of Wisp servers (priority = list order).
  *   Servers can be added, removed, and moved up/down.
+ * - Cloak tab mode selection.
+ * - Game embedding method selection (document.write, srcdoc, blob, data_url, direct, cors_proxy).
  */
 
 import { settings } from '../settings/settingsManager.js';
@@ -21,11 +23,11 @@ export class SettingsModal {
     this.addInput = document.getElementById('wisp-add-server-input');
     this.statusEl = document.getElementById('wisp-status');
     this.cloakSelect = document.getElementById('setting-cloak-mode');
+    this.embedSelect = document.getElementById('setting-embed-method');
 
     this.setupListeners();
 
-    // Subscribe to settings changes so external mutations (e.g. server-list
-    // mutations from other modules) are reflected in the UI.
+    // Subscribe to settings changes so external mutations are reflected in the UI
     this._unsubscribe = settings.subscribe((next) => {
       if (!this.overlay?.classList.contains('active')) return;
       if (this.enabledToggle && this.enabledToggle.checked !== next.wisp.enabled) {
@@ -34,6 +36,9 @@ export class SettingsModal {
       }
       if (this.cloakSelect && this.cloakSelect.value !== next.cloak.mode) {
         this.cloakSelect.value = next.cloak.mode;
+      }
+      if (this.embedSelect && this.embedSelect.value !== next.embed?.method) {
+        this.embedSelect.value = next.embed?.method || 'document.write';
       }
       this.renderServers();
     });
@@ -80,6 +85,13 @@ export class SettingsModal {
       this.cloakSelect.addEventListener('change', () => {
         settings.setCloakMode(this.cloakSelect.value);
         showToast(`Cloaked tab: ${this.cloakSelect.selectedOptions[0].text}`, 'success');
+      });
+    }
+
+    if (this.embedSelect) {
+      this.embedSelect.addEventListener('change', () => {
+        settings.setEmbedMethod(this.embedSelect.value);
+        showToast(`Default embed method: ${this.embedSelect.selectedOptions[0].text}`, 'success');
       });
     }
 
@@ -158,10 +170,6 @@ export class SettingsModal {
       return;
     }
 
-    // Build each row with createElement + textContent so any server URL
-    // containing HTML-meaningful characters is rendered safely. The previous
-    // regex-strip approach removed characters (degrading URLs) rather than
-    // encoding them, and left the title attribute unencoded.
     const frag = document.createDocumentFragment();
     servers.forEach((server, index) => {
       const row = document.createElement('div');
@@ -228,6 +236,9 @@ export class SettingsModal {
     this.renderStatus();
     if (this.cloakSelect) {
       this.cloakSelect.value = settings.cloak.mode;
+    }
+    if (this.embedSelect) {
+      this.embedSelect.value = settings.embedMethod;
     }
     this.overlay.classList.add('active');
     this.overlay.setAttribute('aria-hidden', 'false');

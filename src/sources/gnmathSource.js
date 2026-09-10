@@ -47,7 +47,8 @@ export const gnmathSource = {
         url: embedUrl,
         cover: coverUrl,
         fallbackThumbnail: '/assets/placeholders/default-game.svg',
-        directEmbed: true,
+        directEmbed: false,
+        supportsAboutBlank: true,
         special: game.special
       }, this.name);
 
