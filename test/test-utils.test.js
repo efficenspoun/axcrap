@@ -1,5 +1,5 @@
 /**
- * Unit tests for schema normalization, escapeHtml, slugify, and debounce.
+ * Unit tests for schema normalization, escapeHtml, slugify, debounce, and gameHtml.
  *
  * Run with: node --test test/test-utils.test.js
  */
@@ -11,6 +11,7 @@ import { normalizeGame } from '../src/sources/schema.js';
 import { escapeHtml } from '../src/utils/escapeHtml.js';
 import { slugify } from '../src/utils/slugify.js';
 import { debounce } from '../src/utils/debounce.js';
+import { getBaseHref, prepareGameHtml } from '../src/utils/gameHtml.js';
 
 // ───────────────────────── schema ─────────────────────────
 test('normalizeGame: empty object falls back to "Not provided" for required string fields', () => {
@@ -82,9 +83,6 @@ test('escapeHtml: leaves safe characters alone', () => {
 });
 
 test('escapeHtml: coerces truthy numbers to their string form', () => {
-  // Note: escapeHtml short-circuits on falsy values (0 returns ''). This is a
-  // quirk of the existing implementation — verify it so future refactors
-  // surface the change.
   assert.equal(escapeHtml(42), '42');
 });
 
@@ -94,9 +92,6 @@ test('slugify: lowercases and dashes', () => {
 });
 
 test('slugify: strips trailing .html but leaves a trailing ? as a separator', () => {
-  // The regex `/\.html?$/i` matches `.htm` + optional `l` at the end. So
-  // 'page.html' -> 'page', but 'page.html?' does not end in `.html` (the
-  // trailing ? is part of the URL) and the ? becomes a separator.
   assert.equal(slugify('page.html'), 'page');
   assert.equal(slugify('page.html?'), 'page-html');
   assert.equal(slugify('page.html?foo=bar'), 'page-html-foo-bar');
@@ -113,6 +108,39 @@ test('slugify: trims leading/trailing dashes', () => {
 test('slugify: falls back to "game" when empty', () => {
   assert.equal(slugify(''), 'game');
   assert.equal(slugify('!!!'), 'game');
+});
+
+// ───────────────────────── gameHtml ─────────────────────────
+test('getBaseHref: extracts directory path from full URL', () => {
+  assert.equal(getBaseHref('https://example.com/games/action/index.html'), 'https://example.com/games/action/');
+  assert.equal(getBaseHref('https://example.com/games/play.html?v=2#top'), 'https://example.com/games/');
+  assert.equal(getBaseHref('https://cdn.jsdelivr.net/gh/user/repo@main/game.html'), 'https://cdn.jsdelivr.net/gh/user/repo@main/');
+});
+
+test('prepareGameHtml: injects <base> and <meta charset> into existing <head>', () => {
+  const input = '<html><head><title>Test Game</title></head><body><h1>Play</h1></body></html>';
+  const output = prepareGameHtml(input, 'https://cdn.example.com/games/game1/index.html');
+  assert.ok(output.includes('<base href="https://cdn.example.com/games/game1/">'));
+  assert.ok(output.includes('<meta charset="utf-8">'));
+});
+
+test('prepareGameHtml: strips conflicting existing <base> tags', () => {
+  const input = '<html><head><base href="/"><title>Game</title></head><body></body></html>';
+  const output = prepareGameHtml(input, 'https://cdn.example.com/games/game1/index.html');
+  assert.ok(!output.includes('<base href="/">'));
+  assert.ok(output.includes('<base href="https://cdn.example.com/games/game1/">'));
+});
+
+test('prepareGameHtml: creates synthetic <head> when only <html> exists', () => {
+  const input = '<html><body><h1>No head</h1></body></html>';
+  const output = prepareGameHtml(input, 'https://cdn.example.com/games/game1/index.html');
+  assert.ok(output.includes('<head><meta charset="utf-8"><base href="https://cdn.example.com/games/game1/"></head>'));
+});
+
+test('prepareGameHtml: prepends <head> when neither <html> nor <head> exists', () => {
+  const input = '<canvas id="game"></canvas><script src="main.js"></script>';
+  const output = prepareGameHtml(input, 'https://cdn.example.com/games/game1/index.html');
+  assert.ok(output.startsWith('<head><meta charset="utf-8"><base href="https://cdn.example.com/games/game1/"></head>'));
 });
 
 // ───────────────────────── debounce ─────────────────────────
