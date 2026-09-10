@@ -1,8 +1,6 @@
 import { normalizeGame } from './schema.js';
 import { fetchJsonWithCorsFallback } from './fetchJson.js';
 
-const GAMES_SNAPSHOT = '/data/gnmath-games.snapshot.json';
-
 export const gnmathSource = {
   id: 'gnmath',
   name: 'GN-Math',
@@ -15,7 +13,7 @@ export const gnmathSource = {
    * Scrape and parse games directly in the browser
    */
   async scrape() {
-    const rawGames = await fetchJsonWithCorsFallback(this.endpoint, { snapshot: GAMES_SNAPSHOT });
+    const rawGames = await fetchJsonWithCorsFallback(this.endpoint);
     if (!Array.isArray(rawGames)) {
       throw new Error('Invalid scraped payload: expected array of games');
     }
@@ -28,7 +26,7 @@ export const gnmathSource = {
       // Filter out discord suggestions or invalid entries
       if (game.id <= 0 || game.url.includes('discord.gg')) continue;
 
-      // Resolve asset templates (live data has {COVER_URL}/{HTML_URL}, snapshot has resolved URLs)
+      // Resolve asset templates ({COVER_URL}/{HTML_URL} placeholders from the CDN)
       const coverUrl = (game.cover || '')
         .replace('{COVER_URL}', this.coverBase)
         .replace('{HTML_URL}', this.htmlBase);

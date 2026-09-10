@@ -59,7 +59,6 @@ export const duckmathSource = {
    */
   async scrape() {
     const rawApps = await fetchJsonWithCorsFallback(this.endpoint, {
-      snapshot: '/data/duckmath-games.snapshot.json',
       headers: {
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'apikey': SUPABASE_KEY,
